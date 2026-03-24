@@ -5,49 +5,55 @@ from pb import todo_pb2_grpc
 class ToDoService(todo_pb2_grpc.ToDoServiceServicer):
 
     def __init__(self):
-        # Initialize your data storage here (e.g., a list or a database connection)
+        # Simple Task Storage (In-memory)
         self.tasks = {}
         self.TaskID = 0
+        self.OldTaskIDPool = []
 
     def AddTask(self, request, context):
-        self.TaskID += 1
+        if self.OldTaskIDPool:
+            self.TaskID = self.OldTaskIDPool.pop(0)
+        else:
+            self.TaskID += 1
+
         new_task = todo_pb2.Task(id=self.TaskID, title=request.title, description=request.description)
         self.tasks[self.TaskID] = new_task
         return new_task
 
     def GetTask(self, request, context):
-        return self.tasks.get(request.id, todo_pb2.Task(id=-1, title="Phony Task", description="No task was found. Sending dummy task."))
+        task = self.tasks.get(request.id)
+        if task is None:
+            context.abort(grpc.StatusCode.NOT_FOUND, f"Task with id {request.id} not found")
+        return task
 
     def UpdateTask(self, request, context):
         update_task = self.tasks.get(request.id)
         if not update_task:
-            return todo_pb2.Task(id=-1, title="Phony Task", description="No task was found. Sending dummy task.")
+            context.abort(grpc.StatusCode.NOT_FOUND, f"Task with id {request.id} not found")
 
         # Update the task fields
-        update_task.title = request.title
-        update_task.description = request.description
+        if not request.title and not request.description:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "At least one field (title or description) must be provided")
+
+        if request.title:
+            update_task.title = request.title
+        if request.description:
+            update_task.description = request.description
 
         return update_task
-                l = mid + 1
-            else:
-                r = mid - 1
-        
-        return todo_pb2.Task(id=-1, title="Phony Task", description="No task was found. Sending dummy task.")
-
-    def UpdateTask(self, request, context):
-        update_task
-
-        return todo_pb2.Task(id=request.id, title=request.title, description=request.description)
 
     def DeleteTask(self, request, context):
-        # Implement your logic to delete a task here
-        return todo_pb2.Task(id=request.id)
-    
+        removed_task = self.tasks.pop(request.id, None)
+        if removed_task is None:
+            context.abort(grpc.StatusCode.NOT_FOUND, f"Task with id {request.id} not found")
+        return removed_task
+
     def ListTasks(self, request, context):
-        # Implement your logic to list 
-        return todo_pb2.TaskList(tasks)
+        return todo_pb2.TaskList(tasks=list(self.tasks.values()))
     
     def MarkTaskCompleted(self, request, context):
-        # Implement your logic to mark a task as completed here
-        # Task.Completed = True
-        return todo_pb2.Task(id=request.id, title="Sample Task", description="This is a sample task.", completed=True)
+        task = self.tasks.get(request.id)
+        if task is None:
+            context.abort(grpc.StatusCode.NOT_FOUND, f"Task with id {request.id} not found")
+        task.completed = True
+        return task
