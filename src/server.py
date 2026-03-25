@@ -1,5 +1,6 @@
 import grpc
-from pb import todo_pb2
+from concurrent import futures
+from pb import todo_pb2 as todo
 from pb import todo_pb2_grpc
 
 class ToDoService(todo_pb2_grpc.ToDoServiceServicer):
@@ -16,7 +17,7 @@ class ToDoService(todo_pb2_grpc.ToDoServiceServicer):
         else:
             self.TaskID += 1
 
-        new_task = todo_pb2.Task(id=self.TaskID, title=request.title, description=request.description)
+        new_task = todo.Task(id=self.TaskID, title=request.title, description=request.description)
         self.tasks[self.TaskID] = new_task
         return new_task
 
@@ -44,12 +45,13 @@ class ToDoService(todo_pb2_grpc.ToDoServiceServicer):
 
     def DeleteTask(self, request, context):
         removed_task = self.tasks.pop(request.id, None)
+        self.OldTaskIDPool.append(request.id)
         if removed_task is None:
             context.abort(grpc.StatusCode.NOT_FOUND, f"Task with id {request.id} not found")
         return removed_task
 
     def ListTasks(self, request, context):
-        return todo_pb2.TaskList(tasks=list(self.tasks.values()))
+        return todo.TaskList(tasks=list(self.tasks.values()))
     
     def MarkTaskCompleted(self, request, context):
         task = self.tasks.get(request.id)
@@ -57,3 +59,16 @@ class ToDoService(todo_pb2_grpc.ToDoServiceServicer):
             context.abort(grpc.StatusCode.NOT_FOUND, f"Task with id {request.id} not found")
         task.completed = True
         return task
+
+
+def serve():
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    todo_pb2_grpc.add_ToDoServiceServicer_to_server(ToDoService(), server)
+    server.add_insecure_port("[::]:50051")
+    server.start()
+    print("gRPC server listening on localhost:50051")
+    server.wait_for_termination()
+
+
+if __name__ == "__main__":
+    serve()
